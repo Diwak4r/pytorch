@@ -2113,6 +2113,46 @@ test_executorch() {
   assert_git_not_dirty
 }
 
+test_torchtitan() {
+  # build-additional-packages already built these against the wheel under test
+  # and left them in dist/, so these reuse the prebuilt wheels and install them
+  # --no-deps. Installing the nightlies instead would replace that wheel: the
+  # prebuilt torchcomms pins an exact torch version.
+  install_torchao
+  install_torchcomms
+
+  if [[ ! -d ./torchtitan ]]; then
+    git clone --quiet https://github.com/pytorch/torchtitan.git
+    pushd torchtitan
+    git checkout "$(get_pinned_commit torchtitan)"
+    popd
+  fi
+
+  # helion is already in the CI image, installed --no-deps by install_triton.sh
+  # because it depends on torch and triton and must not pull them from PyPI.
+  pushd torchtitan
+  pip_install -e .
+
+  # torchtitan's tests/integration_tests/features.py builds
+  # --checkpoint.initial_load_path under RUNNER_TEMP, but the paired save reads
+  # OUTPUT_DIR, which defaults to a path relative to cwd. Pin both to the same
+  # absolute directory so the save and load halves agree.
+  export NGPU=8
+  if [[ -n "${RUNNER_TEMP:-}" ]]; then
+    export OUTPUT_DIR="${RUNNER_TEMP}/artifacts-to-be-uploaded"
+  fi
+
+  if [[ "${TEST_CONFIG}" == *features* ]]; then
+    scripts/ci/pytorch_ci_test_runner.sh feature_tests
+  elif [[ "${TEST_CONFIG}" == *models* ]]; then
+    scripts/ci/pytorch_ci_test_runner.sh model_tests
+  else
+    echo "Unknown torchtitan test config: ${TEST_CONFIG}"
+    exit 1
+  fi
+  popd
+}
+
 test_operator_benchmark() {
   TEST_REPORTS_DIR=$(pwd)/test/test-reports
   mkdir -p "$TEST_REPORTS_DIR"
@@ -2232,8 +2272,7 @@ elif [[ "$TEST_CONFIG" == *vllm* ]]; then
 
     python -m cli.run test external vllm --test-plan "$TEST_CONFIG" --shard-id "$SHARD_NUMBER" --num-shards "$NUM_TEST_SHARDS"
 elif [[ "$TEST_CONFIG" == *torchtitan* ]]; then
-    (cd .ci/lumen_cli && python -m pip install -e .)
-    python -m cli.run test external torchtitan --test-plan "$TEST_CONFIG" --shard-id "$SHARD_NUMBER" --num-shards "$NUM_TEST_SHARDS"
+  test_torchtitan
 elif [[ "${TEST_CONFIG}" == *executorch* ]]; then
   test_executorch
 elif [[ "$TEST_CONFIG" == 'jit_legacy' ]]; then

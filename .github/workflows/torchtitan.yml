@@ -65,6 +65,10 @@ jobs:
       ci-docker-hash: ${{ needs.get-label-type.outputs.ci-docker-hash }}
       cuda-arch-list: '8.0 8.9 9.0 10.0'
       runner: linux.24xlarge.memory
+      # Build torchao and torchcomms against the PyTorch wheel under test. The
+      # nightly torchcomms wheel pins an exact torch version, so installing it
+      # would replace that wheel before torchtitan runs.
+      build-additional-packages: "torchao torchcomms"
       # torchtitan_h100_integration disabled pending runner availability
       test-matrix: |
         { include: [
